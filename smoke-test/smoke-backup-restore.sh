@@ -15,6 +15,8 @@ runCleanup() {
 
 deleteCluster
 createCluster
+export EXTERNAL_ADDRESS=$(externalAddress)
+
 ../k0sctl init
 ../k0sctl apply --config "${K0SCTL_CONFIG}" --debug
 

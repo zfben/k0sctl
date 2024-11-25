@@ -11,6 +11,8 @@ trap cleanup EXIT
 deleteCluster
 createCluster
 
+export EXTERNAL_ADDRESS=$(externalAddress)
+
 echo "* Starting apply"
 ../k0sctl apply --config "${K0SCTL_CONFIG}" --debug
 echo "* Apply OK"

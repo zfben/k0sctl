@@ -33,6 +33,12 @@ func (p *InstallControllers) Prepare(config *v1beta1.Cluster) error {
 	p.hosts = p.Config.Spec.Hosts.Controllers().Filter(func(h *cluster.Host) bool {
 		return !h.Reset && !h.Metadata.NeedsUpgrade && (h != p.leader && h.Metadata.K0sRunningVersion == nil)
 	})
+	log.Debug("hosts selected for phase:")
+	for _, h := range p.hosts {
+		log.Debugf("  - %s", h)
+	}
+	log.Debug("leader:")
+	log.Debugf(" - %s", p.leader)
 
 	return nil
 }
@@ -65,10 +71,10 @@ func (p *InstallControllers) CleanUp() {
 
 func (p *InstallControllers) After() error {
 	for i, h := range p.hosts {
+		h.Metadata.K0sJoinToken = ""
 		if h.Metadata.K0sJoinTokenID == "" {
 			continue
 		}
-		h.Metadata.K0sJoinToken = ""
 		err := p.Wet(p.leader, fmt.Sprintf("invalidate k0s join token for controller %s", h), func() error {
 			log.Debugf("%s: invalidating join token for controller %d", p.leader, i+1)
 			return p.leader.Exec(p.leader.Configurer.K0sCmdf("token invalidate --data-dir=%s %s", p.leader.K0sDataDir(), h.Metadata.K0sJoinTokenID), exec.Sudo(p.leader))
@@ -88,15 +94,39 @@ func (p *InstallControllers) After() error {
 
 // Run the phase
 func (p *InstallControllers) Run() error {
-	url := p.Config.Spec.InternalKubeAPIURL()
-	healthz := fmt.Sprintf("%s/healthz", url)
-
+	for _, h := range p.hosts {
+		if p.IsWet() {
+			log.Infof("%s: generate join token for %s", p.leader, h)
+			token, err := p.Config.Spec.K0s.GenerateToken(
+				p.leader,
+				"controller",
+				time.Duration(10)*time.Minute,
+			)
+			if err != nil {
+				return err
+			}
+			h.Metadata.K0sJoinToken = token
+			tokenData, err := cluster.ParseToken(token)
+			if err != nil {
+				return err
+			}
+			log.Debugf("%s: token data for %s: %+v", p.leader, h, tokenData)
+			h.Metadata.K0sJoinTokenID = tokenData.ID
+			h.Metadata.K0sJoinTokenURL = tokenData.URL
+		} else {
+			p.DryMsgf(p.leader, "generate a k0s join token for controller %s", h)
+			h.Metadata.K0sJoinTokenID = "dry-run"
+			h.Metadata.K0sJoinTokenURL = p.Config.Spec.KubeAPIURL()
+		}
+	}
 	err := p.parallelDo(p.hosts, func(h *cluster.Host) error {
+		url := h.Metadata.K0sJoinTokenURL
+		healthz := fmt.Sprintf("%s/healthz", url)
 		if p.IsWet() || !p.leader.Metadata.DryRunFakeLeader {
 			log.Infof("%s: validating api connection to %s", h, url)
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
-			if err := retry.Context(ctx, node.HTTPStatusFunc(h, healthz, 200, 401)); err != nil {
+			if err := retry.Context(ctx, node.HTTPStatusFunc(h, healthz, 200, 401, 404)); err != nil {
 				return fmt.Errorf("failed to connect from controller to kubernetes api at %s - check networking", url)
 			}
 		} else {
@@ -107,35 +137,12 @@ func (p *InstallControllers) Run() error {
 	if err != nil {
 		return err
 	}
-
-	for _, h := range p.hosts {
-		var token string
-		var tokenID string
-
-		if p.IsWet() {
-			log.Infof("%s: generating token", p.leader)
-			token, err = p.Config.Spec.K0s.GenerateToken(
-				p.leader,
-				"controller",
-				time.Duration(10)*time.Minute,
-			)
-			if err != nil {
-				return err
-			}
-			h.Metadata.K0sJoinToken = token
-			tokenID, err = cluster.TokenID(token)
-			if err != nil {
-				return err
-			}
-			log.Debugf("%s: join token ID: %s", p.leader, tokenID)
-			h.Metadata.K0sJoinTokenID = tokenID
-		} else {
-			p.DryMsgf(p.leader, "generate a k0s join token for controller %s", h)
-			h.Metadata.K0sJoinTokenID = "dry-run"
-		}
-
+	return p.parallelDo(p.hosts, func(h *cluster.Host) error {
 		log.Infof("%s: writing join token", h)
-		if err := h.Configurer.WriteFile(h, h.K0sJoinTokenPath(), h.Metadata.K0sJoinToken, "0640"); err != nil {
+		err = p.Wet(h, "write join token", func() error {
+			return h.Configurer.WriteFile(h, h.K0sJoinTokenPath(), h.Metadata.K0sJoinToken, "0640")
+		})
+		if err != nil {
 			return err
 		}
 
@@ -183,11 +190,20 @@ func (p *InstallControllers) Run() error {
 			if err := p.waitJoined(h); err != nil {
 				return err
 			}
-		}
-		h.Metadata.Ready = true
-	}
 
-	return nil
+			log.Infof("%s: waiting for system pods to become ready", h)
+			if err := retry.Timeout(context.TODO(), 10*time.Minute, node.SystemPodsRunningFunc(h)); err != nil {
+				if !Force {
+					return fmt.Errorf("all system pods not running after api start-up, you can ignore this check by using --force: %w", err)
+				}
+				log.Warnf("%s: failed to observe system pods running after api start-up: %s", h, err)
+			}
+
+			h.Metadata.Ready = true
+		}
+
+		return nil
+	})
 }
 
 func (p *InstallControllers) waitJoined(h *cluster.Host) error {

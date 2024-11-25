@@ -8,13 +8,13 @@ spec:
         address: "127.0.0.1"
         port: 9022
         keyPath: ./id_rsa_k0s
-    - role: controller
+    - role: controller+worker
       uploadBinary: true
       ssh:
         address: "127.0.0.1"
         port: 9023
         keyPath: ./id_rsa_k0s
-    - role: controller
+    - role: controller+worker
       uploadBinary: true
       ssh:
         address: "127.0.0.1"
@@ -24,6 +24,8 @@ spec:
     version: "${K0S_VERSION}"
     config:
       spec:
+        api:
+          externalAddress: "${EXTERNAL_ADDRESS}"
         telemetry:
           enabled: false
 

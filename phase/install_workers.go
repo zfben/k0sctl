@@ -74,10 +74,10 @@ func (p *InstallWorkers) After() error {
 		return nil
 	}
 	for i, h := range p.hosts {
+		h.Metadata.K0sJoinToken = ""
 		if h.Metadata.K0sJoinTokenID == "" {
 			continue
 		}
-		h.Metadata.K0sJoinToken = ""
 		err := p.Wet(p.leader, fmt.Sprintf("invalidate k0s join token for worker %s", h), func() error {
 			log.Debugf("%s: invalidating join token for worker %d", p.leader, i+1)
 			return p.leader.Exec(p.leader.Configurer.K0sCmdf("token invalidate --data-dir=%s %s", p.leader.K0sDataDir(), h.Metadata.K0sJoinTokenID), exec.Sudo(p.leader))
@@ -86,7 +86,6 @@ func (p *InstallWorkers) After() error {
 			log.Warnf("%s: failed to invalidate worker join token: %v", p.leader, err)
 		}
 		_ = p.Wet(h, "overwrite k0s join token file", func() error {
-
 			if err := h.Configurer.WriteFile(h, h.K0sJoinTokenPath(), "# overwritten by k0sctl after join\n", "0600"); err != nil {
 				log.Warnf("%s: failed to overwrite the join token file at %s", h, h.K0sJoinTokenPath())
 			}
@@ -98,10 +97,42 @@ func (p *InstallWorkers) After() error {
 
 // Run the phase
 func (p *InstallWorkers) Run() error {
-	url := p.Config.Spec.InternalKubeAPIURL()
-	healthz := fmt.Sprintf("%s/healthz", url)
+	for i, h := range p.hosts {
+		log.Infof("%s: generating a join token for worker %d", p.leader, i+1)
+		err := p.Wet(p.leader, fmt.Sprintf("generate a k0s join token for worker %s", h), func() error {
+			t, err := p.Config.Spec.K0s.GenerateToken(
+				p.leader,
+				"worker",
+				time.Duration(10*time.Minute),
+			)
+			if err != nil {
+				return err
+			}
+			h.Metadata.K0sJoinToken = t
+
+			td, err := cluster.ParseToken(t)
+			if err != nil {
+				return fmt.Errorf("parse k0s token: %w", err)
+			}
+			h.Metadata.K0sJoinTokenID = td.ID
+			h.Metadata.K0sJoinTokenURL = td.URL
+
+			log.Debugf("%s: token data for %s: %+v", p.leader, h, td)
+			return nil
+		}, func() error {
+			h.Metadata.K0sJoinTokenID = "dry-run"
+			h.Metadata.K0sJoinTokenURL = p.Config.Spec.KubeAPIURL()
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+	}
 
 	err := p.parallelDo(p.hosts, func(h *cluster.Host) error {
+		url := h.Metadata.K0sJoinTokenURL
+		healthz := fmt.Sprintf("%s/healthz", url)
+
 		if p.IsWet() || !p.leader.Metadata.DryRunFakeLeader {
 			log.Infof("%s: validating api connection to %s", h, url)
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -114,39 +145,8 @@ func (p *InstallWorkers) Run() error {
 		}
 		return nil
 	})
-
 	if err != nil {
 		return err
-	}
-
-	for i, h := range p.hosts {
-		log.Infof("%s: generating a join token for worker %d", p.leader, i+1)
-		err = p.Wet(p.leader, fmt.Sprintf("generate a k0s join token for worker %s", h), func() error {
-			t, err := p.Config.Spec.K0s.GenerateToken(
-				p.leader,
-				"worker",
-				time.Duration(10*time.Minute),
-			)
-			if err != nil {
-				return err
-			}
-			h.Metadata.K0sJoinToken = t
-
-			ti, err := cluster.TokenID(t)
-			if err != nil {
-				return err
-			}
-			h.Metadata.K0sJoinTokenID = ti
-
-			log.Debugf("%s: join token ID: %s", h, ti)
-			return nil
-		}, func() error {
-			h.Metadata.K0sJoinTokenID = "dry-run"
-			return nil
-		})
-		if err != nil {
-			return err
-		}
 	}
 
 	return p.parallelDo(p.hosts, func(h *cluster.Host) error {

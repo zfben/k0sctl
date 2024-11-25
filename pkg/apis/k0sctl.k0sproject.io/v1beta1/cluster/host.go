@@ -181,6 +181,7 @@ type HostMetadata struct {
 	K0sNewConfig      string
 	K0sJoinToken      string
 	K0sJoinTokenID    string
+	K0sJoinTokenURL   string
 	K0sStatusArgs     Flags
 	Arch              string
 	IsK0sLeader       bool

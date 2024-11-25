@@ -11,6 +11,8 @@ trap cleanup EXIT
 deleteCluster
 createCluster
 
+export EXTERNAL_ADDRESS=$(externalAddress)
+
 remoteCommand() {
   local userhost="$1"
   shift

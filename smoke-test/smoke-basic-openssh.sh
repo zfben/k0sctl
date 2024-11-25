@@ -15,6 +15,8 @@ cleanup_openssh() {
 deleteCluster
 createCluster
 
+export EXTERNAL_ADDRESS=$(externalAddress)
+
 echo "* Create SSH config"
 mkdir -p ~/.ssh
 mkdir -p ssh

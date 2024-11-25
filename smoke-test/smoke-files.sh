@@ -12,6 +12,8 @@ envsubst < k0sctl-files.yaml.tpl > k0sctl.yaml
 deleteCluster
 createCluster
 
+export EXTERNAL_ADDRESS=$(externalAddress)
+
 remoteCommand() {
   local userhost="$1"
   shift

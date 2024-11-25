@@ -14,6 +14,26 @@ trap cleanup EXIT
 deleteCluster
 createCluster
 
+export EXTERNAL_ADDRESS=$(externalAddress)
+
+
+df -h /
+
+echo "Making some space.."
+
+if [ -z "$GITHUB_RUN_ID" ]; then
+  echo "Cowardly refusing to destroy a machine that doesn't look like a GitHub runner." >&2
+  exit 0
+fi
+
+docker system prune --all --force &
+sudo rm -rf /imagegeneration/installers &
+sudo rm -rf -- "${ANDROID_SDK_ROOT-/opt/nevermind}" &
+
+wait
+
+df -h /
+
 remoteCommand() {
   local userhost="$1"
   shift

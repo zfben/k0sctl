@@ -97,6 +97,8 @@ applyConfig() {
 deleteCluster
 createCluster
 
+export EXTERNAL_ADDRESS=$(externalAddress)
+
 K0S_VERSION="${K0S_FROM}"
 
 colorEcho 3 "Installing ${K0S_VERSION} with --dry-run"

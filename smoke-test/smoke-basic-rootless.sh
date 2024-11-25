@@ -14,6 +14,8 @@ trap cleanup EXIT
 deleteCluster
 createCluster
 
+export EXTERNAL_ADDRESS=$(externalAddress)
+
 for host in manager0 worker0; do
   echo "* Creating ${SSH_USER} on ${host}"
   bootloose ssh "root@${host}" -- groupadd --system k0sctl-admin

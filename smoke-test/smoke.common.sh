@@ -5,6 +5,10 @@ export PRESERVE_CLUSTER="${PRESERVE_CLUSTER:-""}"
 export DISABLE_TELEMETRY=true
 export K0S_VERSION
 
+externalAddress() {
+  bootloose show manager0 -o json | grep '"ip":' | head -1 | cut -d'"' -f4
+}
+
 createCluster() {
   envsubst < "${BOOTLOOSE_TEMPLATE}" > bootloose.yaml
   bootloose create
