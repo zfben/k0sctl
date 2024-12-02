@@ -122,9 +122,9 @@ func (p *InstallControllers) Run() error {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			err := retry.Context(ctx, func(_ context.Context) error {
-				out, err := h.ExecOutput(h.Configurer.KubectlCmdf(h, h.K0sDataDir(), "get --raw='/healthz'"), exec.Sudo(h), exec.Stdin(string(h.Metadata.K0sTokenData.Kubeconfig)))
+				out, err := h.ExecOutput(h.Configurer.KubectlCmdf(h, h.K0sDataDir(), "get --raw='/healthz'"), exec.Sudo(h), exec.StreamOutput(), exec.Stdin(string(h.Metadata.K0sTokenData.Kubeconfig)))
 				if out != "ok" {
-					return fmt.Errorf("kubernetes api /healthz responded with %s", out)
+					return fmt.Errorf("kubernetes api /healthz responded with %q", out)
 				}
 				if err != nil {
 					return fmt.Errorf("failed to connect from controller to kubernetes api - check networking: %w", err)
