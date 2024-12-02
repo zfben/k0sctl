@@ -176,8 +176,10 @@ func (k *K0s) GetClusterID(h *Host) (string, error) {
 
 // TokenData is data collected from a decoded k0s token
 type TokenData struct {
-	ID  string
-	URL string
+	ID         string
+	URL        string
+	Token      string
+	Kubeconfig []byte
 }
 
 // ParseToken returns TokenData for a token string
@@ -202,6 +204,7 @@ func ParseToken(s string) (TokenData, error) {
 	if err != nil {
 		return data, fmt.Errorf("failed to uncompress token: %w", err)
 	}
+	data.Kubeconfig = c
 	cfg := dig.Mapping{}
 	err = yaml.Unmarshal(c, &cfg)
 	if err != nil {
