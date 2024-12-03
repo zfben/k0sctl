@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/k0sproject/k0sctl/pkg/apis/k0sctl.k0sproject.io/v1beta1"
 	"github.com/k0sproject/k0sctl/pkg/apis/k0sctl.k0sproject.io/v1beta1/cluster"
@@ -119,14 +118,6 @@ func (p *InitializeK0s) Run() error {
 		log.Infof("%s: waiting for kubernetes api to respond", h)
 		if err := retry.Timeout(context.TODO(), retry.DefaultTimeout, node.KubeAPIReadyFunc(h, p.Config)); err != nil {
 			return err
-		}
-
-		log.Infof("%s: waiting for system pods to become ready", h)
-		if err := retry.Timeout(context.TODO(), 10*time.Minute, node.SystemPodsRunningFunc(h)); err != nil {
-			if !Force {
-				return fmt.Errorf("all system pods not running after api start-up, you can ignore this check by using --force: %w", err)
-			}
-			log.Warnf("%s: failed to observe system pods running after api start-up: %s", h, err)
 		}
 
 		h.Metadata.Ready = true

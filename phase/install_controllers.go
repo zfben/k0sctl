@@ -196,14 +196,6 @@ func (p *InstallControllers) Run() error {
 				return err
 			}
 
-			log.Infof("%s: waiting for system pods to become ready", h)
-			if err := retry.Timeout(context.TODO(), 10*time.Minute, node.SystemPodsRunningFunc(h)); err != nil {
-				if !Force {
-					return fmt.Errorf("all system pods not running after api start-up, you can ignore this check by using --force: %w", err)
-				}
-				log.Warnf("%s: failed to observe system pods running after api start-up: %s", h, err)
-			}
-
 			h.Metadata.Ready = true
 		}
 
